@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, tipo TEXT NOT NULL CHEC
   empresa TEXT NOT NULL, cnpj TEXT, telefone TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, categoria TEXT, cidade TEXT);
 CREATE TABLE IF NOT EXISTS produtos(id INTEGER PRIMARY KEY, fornecedor_id INTEGER NOT NULL REFERENCES users(id),
   nome TEXT NOT NULL, preco REAL NOT NULL, unidade TEXT DEFAULT 'un', qtd_min INTEGER DEFAULT 1, categoria TEXT,
-  descricao TEXT, emoji TEXT DEFAULT '📦', views INTEGER DEFAULT 0, criado_em TEXT DEFAULT CURRENT_TIMESTAMP);
+  descricao TEXT, icone TEXT DEFAULT 'box', views INTEGER DEFAULT 0, criado_em TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS favoritos(user_id INTEGER, produto_id INTEGER, PRIMARY KEY(user_id,produto_id));
 CREATE TABLE IF NOT EXISTS mensagens(id INTEGER PRIMARY KEY, de_id INTEGER, para_id INTEGER, texto TEXT NOT NULL, criado_em TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pedidos(id INTEGER PRIMARY KEY, produto_id INTEGER, empresario_id INTEGER, qtd INTEGER,
@@ -53,21 +53,32 @@ def run(sql, a=()):
 
 def init_db():
     c = sqlite3.connect(DB)
+    cols = [r[1] for r in c.execute("PRAGMA table_info(produtos)")]
+    if "emoji" in cols:  # banco da versão anterior (emojis): recria com o catálogo novo
+        c.executescript("DROP TABLE produtos;DROP TABLE favoritos;DROP TABLE mensagens;DROP TABLE pedidos;DROP TABLE users;")
     c.executescript(SCHEMA)
     if not c.execute("SELECT 1 FROM users").fetchone():
         h = generate_password_hash("123456")
-        us = [("f", "Rei do Milho", "a@seed.local", "Alimentos", "Campinas, SP"), ("f", "Café do Vale", "b@seed.local", "Alimentos", "Poços de Caldas, MG"),
-              ("f", "Limpa Mais", "c@seed.local", "Limpeza", "Curitiba, PR"), ("f", "Malha Sul", "d@seed.local", "Roupas", "Blumenau, SC"),
+        us = [("f", "Distribuidora Campo Forte", "a@seed.local", "Alimentos", "Campinas, SP"), ("f", "Café do Vale", "b@seed.local", "Alimentos", "Poços de Caldas, MG"),
+              ("f", "Limpa Mais Atacado", "c@seed.local", "Limpeza", "Curitiba, PR"), ("f", "Malha Sul Confecções", "d@seed.local", "Roupas", "Blumenau, SC"),
               ("f", "Volt Atacado", "e@seed.local", "Eletrônicos", "São Paulo, SP"),
               ("f", "Fornecedor Demo", "fornecedor@demo.com", "Alimentos", "São Paulo, SP"), ("e", "Empresa Demo", "empresa@demo.com", "Restaurante", "São Paulo, SP")]
         for t, n, e, cat, cid in us:
             c.execute("INSERT INTO users(tipo,empresa,email,senha,categoria,cidade) VALUES(?,?,?,?,?,?)", (t, n, e, h, cat, cid))
-        ps = [(1, "Milho Verde", 15, "caixa", 10, "Alimentos", "Milho selecionado e de alta qualidade para revenda.", "🌽"),
-              (2, "Café Premium", 28, "kg", 5, "Alimentos", "Grãos torrados em lote pequeno, ideal para cafeterias.", "☕"),
-              (3, "Detergente 5L", 22, "galão", 12, "Limpeza", "Concentrado, rende até 3x mais.", "🧴"),
-              (4, "Camiseta Básica", 18, "peça", 30, "Roupas", "100% algodão, lisa, pronta para estampar.", "👕"),
-              (5, "Carregador USB-C", 12, "un", 50, "Eletrônicos", "Carga rápida 20W, bivolt.", "🔌")]
-        c.executemany("INSERT INTO produtos(fornecedor_id,nome,preco,unidade,qtd_min,categoria,descricao,emoji) VALUES(?,?,?,?,?,?,?,?)", ps)
+        ps = [(1, "Arroz Agulhinha Tipo 1 – 5 kg", 142.00, "fardo", 5, "Alimentos", "Fardo com 6 pacotes de 5 kg (30 kg). Grãos soltos, ideal para restaurantes e mercados.", "sack"),
+              (1, "Feijão Carioca Tipo 1 – 1 kg", 58.00, "fardo", 10, "Alimentos", "Fardo com 10 pacotes de 1 kg. Safra recente, baixo índice de grãos quebrados.", "sack"),
+              (1, "Óleo de Soja 900 ml", 128.00, "caixa", 3, "Alimentos", "Caixa com 20 garrafas de 900 ml. Refinado, validade mínima de 8 meses.", "droplet"),
+              (2, "Café Torrado e Moído 500 g", 310.00, "caixa", 2, "Alimentos", "Caixa com 20 pacotes a vácuo de 500 g. Torra média, 100% arábica.", "coffee"),
+              (1, "Milho Verde em Conserva 170 g", 62.00, "caixa", 4, "Alimentos", "Caixa com 24 latas de 170 g. Grãos selecionados, pronto para uso.", "can"),
+              (3, "Detergente Líquido Neutro 500 ml", 54.00, "caixa", 5, "Limpeza", "Caixa com 24 frascos de 500 ml. Neutro, biodegradável.", "bottle"),
+              (3, "Desinfetante Floral 5 L", 24.90, "galão", 12, "Limpeza", "Galão de 5 litros, concentrado. Rende até 1:10 de diluição.", "bottle"),
+              (3, "Saco de Lixo 100 L Reforçado", 69.00, "pacote", 6, "Limpeza", "Pacote com 100 sacos pretos de 100 litros, resistente a 20 kg.", "bag"),
+              (4, "Camiseta Algodão Penteado", 19.90, "peça", 30, "Roupas", "Malha 30.1 penteada, lisa, tamanhos P ao GG. Ótima para estampa.", "shirt"),
+              (4, "Camisa Polo Uniforme", 38.00, "peça", 20, "Roupas", "Piquet com gola e punhos, cores sob consulta, bordado opcional.", "shirt"),
+              (5, "Carregador USB-C 20 W", 14.50, "unidade", 50, "Eletrônicos", "Carregador de parede com carga rápida, bivolt, 1 ano de garantia.", "plug"),
+              (5, "Lâmpada LED 9 W Bivolt", 215.00, "caixa", 2, "Eletrônicos", "Caixa com 50 lâmpadas E27, luz branca 6500 K, vida útil de 15 mil horas.", "bulb"),
+              (5, "Pilha Alcalina AA", 96.00, "caixa", 2, "Eletrônicos", "Caixa com 48 pilhas AA, validade de 5 anos.", "battery")]
+        c.executemany("INSERT INTO produtos(fornecedor_id,nome,preco,unidade,qtd_min,categoria,descricao,icone) VALUES(?,?,?,?,?,?,?,?)", ps)
         c.commit()
     c.close()
 
@@ -104,8 +115,8 @@ def register():
         return jsonify(erro="A senha precisa ter ao menos 6 caracteres."), 400
     if q("SELECT 1 FROM users WHERE email=?", (em,), one=True):
         return jsonify(erro="Este e-mail já está cadastrado."), 409
-    uid = run("INSERT INTO users(tipo,empresa,cnpj,telefone,email,senha,categoria) VALUES(?,?,?,?,?,?,?)",
-              (d["tipo"], emp, d.get("cnpj"), d.get("telefone"), em, generate_password_hash(sn), d.get("categoria")))
+    uid = run("INSERT INTO users(tipo,empresa,cnpj,telefone,email,senha,categoria,cidade) VALUES(?,?,?,?,?,?,?,?)",
+              (d["tipo"], emp, d.get("cnpj"), d.get("telefone"), em, generate_password_hash(sn), d.get("categoria"), d.get("cidade")))
     session.update(uid=uid, tipo=d["tipo"])
     return jsonify(id=uid, tipo=d["tipo"], empresa=emp)
 
@@ -167,9 +178,9 @@ def novo_produto():
         preco = 0
     if not (d.get("nome") or "").strip() or preco <= 0:
         return jsonify(erro="Informe o nome e um preço maior que zero."), 400
-    emoji = {"Alimentos": "🥫", "Roupas": "👚", "Limpeza": "🧽", "Eletrônicos": "📱"}.get(d.get("categoria"), "📦")
-    i = run("INSERT INTO produtos(fornecedor_id,nome,preco,qtd_min,categoria,descricao,emoji) VALUES(?,?,?,?,?,?,?)",
-            (session["uid"], d["nome"].strip(), preco, int(d.get("qtd_min") or 1), d.get("categoria"), d.get("descricao") or "Sem descrição.", emoji))
+    icone = {"Alimentos": "sack", "Roupas": "shirt", "Limpeza": "bottle", "Eletrônicos": "plug"}.get(d.get("categoria"), "box")
+    i = run("INSERT INTO produtos(fornecedor_id,nome,preco,unidade,qtd_min,categoria,descricao,icone) VALUES(?,?,?,?,?,?,?,?)",
+            (session["uid"], d["nome"].strip(), preco, d.get("unidade") or "unidade", int(d.get("qtd_min") or 1), d.get("categoria"), d.get("descricao") or "Sem descrição.", icone))
     return jsonify(id=i)
 
 
