@@ -12,7 +12,8 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, tipo TEXT NOT NULL CHECK(tipo IN('f','e')),
-  empresa TEXT NOT NULL, cnpj TEXT, telefone TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, categoria TEXT, cidade TEXT);
+    empresa TEXT NOT NULL, cnpj TEXT, documento TEXT, documento_tipo TEXT NOT NULL DEFAULT 'cnpj',
+    telefone TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, categoria TEXT, cidade TEXT);
 CREATE TABLE IF NOT EXISTS produtos(id INTEGER PRIMARY KEY, fornecedor_id INTEGER NOT NULL REFERENCES users(id),
   nome TEXT NOT NULL, preco REAL NOT NULL, unidade TEXT DEFAULT 'un', qtd_min INTEGER DEFAULT 1, categoria TEXT,
   descricao TEXT, icone TEXT DEFAULT 'box', views INTEGER DEFAULT 0, criado_em TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -57,6 +58,13 @@ def init_db():
     if "emoji" in cols:  # banco da versão anterior (emojis): recria com o catálogo novo
         c.executescript("DROP TABLE produtos;DROP TABLE favoritos;DROP TABLE mensagens;DROP TABLE pedidos;DROP TABLE users;")
     c.executescript(SCHEMA)
+    user_cols = {r[1] for r in c.execute("PRAGMA table_info(users)")}
+    if "documento" not in user_cols:
+        c.execute("ALTER TABLE users ADD COLUMN documento TEXT")
+    if "documento_tipo" not in user_cols:
+        c.execute("ALTER TABLE users ADD COLUMN documento_tipo TEXT NOT NULL DEFAULT 'cnpj'")
+    c.execute("UPDATE users SET documento=cnpj WHERE documento IS NULL AND cnpj IS NOT NULL")
+    c.commit()
     if not c.execute("SELECT 1 FROM users").fetchone():
         h = generate_password_hash("123456")
         us = [("f", "Distribuidora Campo Forte", "a@seed.local", "Alimentos", "Campinas, SP"), ("f", "Café do Vale", "b@seed.local", "Alimentos", "Poços de Caldas, MG"),
@@ -110,13 +118,23 @@ def register():
     d = body()
     emp, em, sn = (d.get("empresa") or "").strip(), (d.get("email") or "").strip().lower(), d.get("senha") or ""
     if d.get("tipo") not in ("f", "e") or not emp or "@" not in em:
-        return jsonify(erro="Preencha empresa e um e-mail válido."), 400
+        return jsonify(erro="Preencha seu nome ou nome da empresa e um e-mail válido."), 400
     if len(sn) < 6:
         return jsonify(erro="A senha precisa ter ao menos 6 caracteres."), 400
     if q("SELECT 1 FROM users WHERE email=?", (em,), one=True):
         return jsonify(erro="Este e-mail já está cadastrado."), 409
-    uid = run("INSERT INTO users(tipo,empresa,cnpj,telefone,email,senha,categoria,cidade) VALUES(?,?,?,?,?,?,?,?)",
-              (d["tipo"], emp, d.get("cnpj"), d.get("telefone"), em, generate_password_hash(sn), d.get("categoria"), d.get("cidade")))
+    documento_tipo = d.get("documento_tipo", "cnpj")
+    documento = "".join(ch for ch in str(d.get("documento") or d.get("cnpj") or "") if ch.isdigit())
+    if d["tipo"] == "e":
+        tamanho = {"cpf": 11, "cnpj": 14}.get(documento_tipo)
+        if tamanho is None or len(documento) != tamanho:
+            return jsonify(erro=f"Informe um {'CPF' if documento_tipo == 'cpf' else 'CNPJ'} válido."), 400
+    else:
+        documento_tipo = "cnpj"
+        documento = "".join(ch for ch in str(d.get("cnpj") or "") if ch.isdigit())
+    uid = run("INSERT INTO users(tipo,empresa,cnpj,documento,documento_tipo,telefone,email,senha,categoria,cidade) VALUES(?,?,?,?,?,?,?,?,?,?)",
+              (d["tipo"], emp, documento if documento_tipo == "cnpj" else None, documento or None, documento_tipo,
+               d.get("telefone"), em, generate_password_hash(sn), d.get("categoria"), d.get("cidade")))
     session.update(uid=uid, tipo=d["tipo"])
     return jsonify(id=uid, tipo=d["tipo"], empresa=emp)
 
